@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -31,7 +32,9 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -46,10 +49,10 @@ import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.basic.Button
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.HorizontalDivider
+import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.NavigationBar
 import top.yukonga.miuix.kmp.basic.NavigationBarItem
 import top.yukonga.miuix.kmp.basic.Scaffold
-import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TopAppBar
 import top.yukonga.miuix.kmp.preference.SliderPreference
@@ -57,6 +60,7 @@ import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.ColorSchemeMode
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.theme.ThemeController
+import top.yukonga.miuix.kmp.utils.PressFeedbackType
 
 @Composable
 fun FluidWallApp() {
@@ -138,6 +142,45 @@ private val IconInfo: ImageVector
         }
     }
 
+private val IconGitHub: ImageVector
+    get() = ImageVector.Builder(
+        name = "GitHub",
+        defaultWidth = 24.dp,
+        defaultHeight = 24.dp,
+        viewportWidth = 24f,
+        viewportHeight = 24f
+    ).apply {
+        path(fill = SolidColor(Color.Black)) {
+            moveTo(12f, 2f)
+            curveTo(6.477f, 2f, 2f, 6.484f, 2f, 12.017f)
+            curveToRelative(0f, 4.428f, 2.865f, 8.184f, 6.839f, 9.507f)
+            curveToRelative(0.5f, 0.092f, 0.682f, -0.217f, 0.682f, -0.482f)
+            curveToRelative(0f, -0.237f, -0.008f, -0.865f, -0.013f, -1.699f)
+            curveToRelative(-2.782f, 0.605f, -3.369f, -1.343f, -3.369f, -1.343f)
+            curveToRelative(-0.454f, -1.156f, -1.11f, -1.464f, -1.11f, -1.464f)
+            curveToRelative(-0.907f, -0.621f, 0.069f, -0.608f, 0.069f, -0.608f)
+            curveToRelative(1.003f, 0.071f, 1.531f, 1.031f, 1.531f, 1.031f)
+            curveToRelative(0.892f, 1.529f, 2.341f, 1.088f, 2.91f, 0.832f)
+            curveToRelative(0.091f, -0.647f, 0.349f, -1.089f, 0.635f, -1.339f)
+            curveToRelative(-2.22f, -0.253f, -4.555f, -1.111f, -4.555f, -4.946f)
+            curveToRelative(0f, -1.093f, 0.39f, -1.986f, 1.029f, -2.686f)
+            curveToRelative(-0.103f, -0.254f, -0.446f, -1.272f, 0.098f, -2.653f)
+            curveToRelative(0f, 0f, 0.839f, -0.269f, 2.75f, 1.026f)
+            curveTo(8.045f, 6.452f, 9.02f, 6.3f, 10.005f, 6.296f)
+            curveToRelative(0.98f, 0.004f, 1.967f, 0.133f, 2.886f, 0.406f)
+            curveToRelative(1.899f, -1.295f, 2.737f, -1.026f, 2.737f, -1.026f)
+            curveToRelative(0.545f, 1.381f, 0.202f, 2.399f, 0.099f, 2.653f)
+            curveToRelative(0.641f, 0.7f, 1.028f, 1.593f, 1.028f, 2.686f)
+            curveToRelative(0f, 3.845f, -2.341f, 4.69f, -4.57f, 4.938f)
+            curveToRelative(0.359f, 0.309f, 0.679f, 0.919f, 0.679f, 1.852f)
+            curveToRelative(0f, 1.336f, -0.012f, 2.415f, -0.012f, 2.743f)
+            curveToRelative(0f, 0.267f, 0.18f, 0.578f, 0.688f, 0.481f)
+            curveTo(19.138f, 20.201f, 22f, 16.445f, 22f, 12.017f)
+            curveTo(22f, 6.484f, 17.522f, 2f, 12f, 2f)
+            close()
+        }
+    }.build()
+
 private fun materialIcon(name: String, block: ImageVector.Builder.() -> Unit): ImageVector =
     ImageVector.Builder(name, 24.dp, 24.dp, 24f, 24f).apply {
         block()
@@ -180,7 +223,6 @@ private fun SettingsTab(cfg: FluidConfig, padding: PaddingValues, update: (Fluid
         PreviewCard(cfg)
         Spacer(Modifier.height(12.dp))
 
-        //SmallTitle("遮罩类型")
         Card {
             SectionTitle("开始")
             SwitchPreference(
@@ -201,7 +243,6 @@ private fun SettingsTab(cfg: FluidConfig, padding: PaddingValues, update: (Fluid
         }
         Spacer(Modifier.height(12.dp))
 
-        //SmallTitle("遮罩类型")
         Card {
             SectionTitle("遮罩类型")
             SliderPreference(
@@ -232,7 +273,6 @@ private fun SettingsTab(cfg: FluidConfig, padding: PaddingValues, update: (Fluid
             )
         }
         Spacer(Modifier.height(12.dp))
-
 
         Card {
             SectionTitle("质感")
@@ -344,7 +384,7 @@ private fun PreviewCard(cfg: FluidConfig) {
                 color = MiuixTheme.colorScheme.onBackgroundVariant,
             )
             Spacer(Modifier.weight(1f))
-            val colors = pal?.core
+            // 之前的空变量已清理
         }
     }
 }
@@ -360,7 +400,8 @@ private fun AboutTab(padding: PaddingValues) {
         }
     }
     val muted = MiuixTheme.colorScheme.onBackgroundVariant
-    val enabled = remember { ConfigStore.load(ctx).enabled }
+    val uriHandler = LocalUriHandler.current
+
     Column(
         Modifier
             .fillMaxSize()
@@ -387,6 +428,43 @@ private fun AboutTab(padding: PaddingValues) {
                     style = MiuixTheme.textStyles.body2,
                     color = muted,
                 )
+            }
+        }
+
+        Spacer(Modifier.height(12.dp))
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            pressFeedbackType = PressFeedbackType.Sink,
+            showIndication = true,
+            onClick = {
+                uriHandler.openUri("https://github.com/Winamin/FluidWall")
+            }
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = IconGitHub,
+                    contentDescription = "GitHub",
+                    modifier = Modifier.size(24.dp),
+                    tint = MiuixTheme.colorScheme.onBackground
+                )
+                Spacer(Modifier.width(16.dp))
+                Column {
+                    Text(
+                        text = "GitHub 仓库",
+                        style = MiuixTheme.textStyles.subtitle,
+                        color = MiuixTheme.colorScheme.onBackground
+                    )
+                    Text(
+                        text = "Winamin/FluidWall",
+                        style = MiuixTheme.textStyles.footnote1,
+                        color = muted
+                    )
+                }
             }
         }
         Spacer(Modifier.height(32.dp))
