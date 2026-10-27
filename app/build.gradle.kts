@@ -11,7 +11,7 @@ android {
         applicationId = "com.eta.fluidwall"
         minSdk = 33
         targetSdk = 36
-        versionCode = 1
+        versionCode = 20261027
         versionName = "1.0"
         multiDexKeepProguard = file("multidex-keep.pro")
     }
