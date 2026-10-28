@@ -28,6 +28,7 @@ data class FluidConfig(
         .toString()
 
     companion object {
+        const val PACKAGE = "com.txf.fluidwall"
         const val AUTHORITY = "com.txf.fluidwall.config"
 
         fun parse(raw: String?): FluidConfig {

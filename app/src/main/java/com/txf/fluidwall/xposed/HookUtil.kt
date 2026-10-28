@@ -2,6 +2,7 @@ package com.txf.fluidwall.xposed
 
 import android.app.Application
 import android.content.Context
+import com.txf.fluidwall.core.LogStore
 import com.txf.fluidwall.core.XLog
 import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XposedHelpers
@@ -28,6 +29,7 @@ object HookUtil {
                 object : XC_MethodHook() {
                     override fun afterHookedMethod(param: MethodHookParam) {
                         val app = param.thisObject as? Application ?: return
+                        LogStore.init(app)
                         try {
                             cb(app)
                         } catch (t: Throwable) {

@@ -17,5 +17,6 @@ object XLog {
             XposedBridge.log("$TAG: $line")
         } catch (t: Throwable) {
         }
+        LogStore.record(msg)
     }
 }

@@ -10,7 +10,10 @@ import android.os.Bundle
 
 class ConfigProvider : ContentProvider() {
 
-    override fun onCreate(): Boolean = true
+    override fun onCreate(): Boolean {
+        context?.let { LogStore.init(it) }
+        return true
+    }
 
     override fun query(
         uri: Uri,
@@ -25,6 +28,13 @@ class ConfigProvider : ContentProvider() {
 
     override fun call(method: String, arg: String?, extras: Bundle?): Bundle {
         val ctx: Context = context ?: return Bundle()
+        if (method == "log") {
+            if (!arg.isNullOrBlank()) LogStore.appendRaw(ctx, arg)
+            return Bundle().apply { putBoolean("ok", true) }
+        }
+        if (method == "status") {
+            return HookStatus.handle(ctx, arg, extras)
+        }
         if (WallpaperCache.isCacheMethod(method)) {
             return WallpaperCache.handle(ctx, method, arg, extras)
         }
