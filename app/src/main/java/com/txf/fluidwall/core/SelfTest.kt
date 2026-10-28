@@ -24,8 +24,10 @@ object SelfTest {
         Thread({
             val sb = StringBuilder()
             try {
-                val home = WallpaperBridge.homeBitmap(ctx, 256)
-                val lock = WallpaperBridge.lockBitmap(ctx, 256)
+                val home = WallpaperStore.loadLocal(ctx, "home", 256)
+                    ?: WallpaperBridge.homeBitmap(ctx, 256)
+                val lock = WallpaperStore.loadLocal(ctx, "lock", 256)
+                    ?: WallpaperBridge.lockBitmap(ctx, 256)
                 sb.append("home=").append(home?.let { "${it.width}x${it.height}" } ?: "null")
                 sb.append(" lock=").append(lock?.let { "${it.width}x${it.height}" } ?: "null")
                 val seed = lock ?: home
@@ -122,6 +124,7 @@ object SelfTest {
         }
     }
 
+    @Suppress("DEPRECATION") // DexFile lists definitions without linking the LSPosed-only superclass.
     private fun checkEntry(ctx: Context): String {
         val apk = ctx.applicationInfo.sourceDir ?: return "no-apk"
         val names = ArrayList<String>()
@@ -137,20 +140,17 @@ object SelfTest {
                 }
             }
             if (names.isEmpty()) return "no-entry-list"
-            val cl = dalvik.system.PathClassLoader(apk, null, javaClass.classLoader)
-            val sb = StringBuilder()
-            for (n in names.distinct()) {
-                val ok = try {
-                    val c = Class.forName(n, false, cl)
-                    c.getDeclaredConstructor().newInstance()
-                    true
-                } catch (t: Throwable) {
-                    sb.append(" fail($n:$t)")
-                    false
-                }
-                sb.append(if (ok) " loaded($n)" else "")
+            // Enumerate definitions without resolving superclass dependencies. The framework
+            // APIs are compileOnly and are supplied by LSPosed only in the hooked process.
+            val dex = dalvik.system.DexFile(apk)
+            val packaged = try {
+                dex.entries().asSequence().toSet()
+            } finally {
+                dex.close()
             }
-            return sb.toString()
+            return names.distinct().joinToString(" ") { name ->
+                if (name in packaged) "packaged($name)" else "MISSING($name)"
+            } + " framework=provided-by-LSPosed (运行状态见壁纸 Hook 回报)"
         } catch (t: Throwable) {
             return " err:$t"
         }

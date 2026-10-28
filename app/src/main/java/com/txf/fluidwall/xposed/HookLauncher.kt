@@ -87,18 +87,25 @@ object HookLauncher {
     }
 
     private fun hookTrigger(c: Class<*>, method: String, source: String): Boolean {
-        val set = try {
-            XposedBridge.hookAllMethods(c, method, object : XC_MethodHook() {
-                override fun beforeHookedMethod(param: MethodHookParam) {
-                    XLog.i("system unlock anim: $source")
-                    LauncherLayer.onSystemUnlockAnim(source)
-                }
-            })
-        } catch (t: Throwable) {
-            XLog.i("hook $method on ${c.name} failed: $t")
-            return false
+        val targets = c.declaredMethods.filter {
+            it.name == method && !java.lang.reflect.Modifier.isAbstract(it.modifiers)
         }
-        if (set.isEmpty()) return false
+        val callback = object : XC_MethodHook() {
+            override fun beforeHookedMethod(param: MethodHookParam) {
+                XLog.i("system unlock anim: $source")
+                LauncherLayer.onSystemUnlockAnim(source)
+            }
+        }
+        var hooked = false
+        for (target in targets) {
+            try {
+                XposedBridge.hookMethod(target, callback)
+                hooked = true
+            } catch (t: Throwable) {
+                XLog.i("hook $target failed: $t")
+            }
+        }
+        if (!hooked) return false
         XLog.i("hooked ${c.simpleName}#$method")
         return true
     }
