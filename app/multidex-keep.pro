@@ -1,2 +1,2 @@
--keep class com.eta.fluidwall.xposed.** { *; }
--keep class com.eta.fluidwall.core.** { *; }
+-keep class com.txf.fluidwall.xposed.** { *; }
+-keep class com.txf.fluidwall.core.** { *; }

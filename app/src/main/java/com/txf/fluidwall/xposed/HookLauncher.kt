@@ -1,8 +1,8 @@
-package com.eta.fluidwall.xposed
+package com.txf.fluidwall.xposed
 
 import android.app.Activity
-import com.eta.fluidwall.core.LauncherLayer
-import com.eta.fluidwall.core.XLog
+import com.txf.fluidwall.core.LauncherLayer
+import com.txf.fluidwall.core.XLog
 import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XposedBridge
 import de.robv.android.xposed.XposedHelpers

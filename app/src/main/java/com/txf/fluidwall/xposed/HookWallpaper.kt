@@ -1,4 +1,4 @@
-package com.eta.fluidwall.xposed
+package com.txf.fluidwall.xposed
 
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -7,10 +7,10 @@ import android.content.IntentFilter
 import android.graphics.drawable.Drawable
 import android.os.Handler
 import android.os.Looper
-import com.eta.fluidwall.core.ColorKMeans
-import com.eta.fluidwall.core.WallpaperBridge
-import com.eta.fluidwall.core.WallpaperStore
-import com.eta.fluidwall.core.XLog
+import com.txf.fluidwall.core.ColorKMeans
+import com.txf.fluidwall.core.WallpaperBridge
+import com.txf.fluidwall.core.WallpaperStore
+import com.txf.fluidwall.core.XLog
 import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XposedHelpers
 

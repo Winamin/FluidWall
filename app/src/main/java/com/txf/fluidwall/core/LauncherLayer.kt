@@ -1,4 +1,4 @@
-package com.eta.fluidwall.core
+package com.txf.fluidwall.core
 
 import android.app.Activity
 import android.app.KeyguardManager
@@ -214,7 +214,7 @@ object LauncherLayer {
                         fire("debug_test")
                     }
                 },
-                IntentFilter("com.eta.fluidwall.LAYERTEST"),
+                IntentFilter("com.txf.fluidwall.LAYERTEST"),
                 Context.RECEIVER_EXPORTED,
             )
         } catch (t: Throwable) {

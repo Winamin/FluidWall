@@ -1,4 +1,4 @@
-package com.eta.fluidwall.core
+package com.txf.fluidwall.core
 
 object FluidShader {
 

@@ -65,7 +65,7 @@ cd FluidWall
 ## 目录
 
 ```
-app/src/main/java/com/eta/fluidwall/
+app/src/main/java/com/txf/fluidwall/
 ├── MainActivity.kt, SettingsScreen.kt          设置界面（Compose + Miuix）
 ├── core/
 │   ├── FluidShader.kt                          AGSL 着色器
@@ -87,10 +87,10 @@ app/src/main/java/com/eta/fluidwall/
 adb logcat -s FluidWall
 
 # 手动播一次过渡，不用真的锁屏
-adb shell am broadcast -a com.eta.fluidwall.LAYERTEST
+adb shell am broadcast -a com.txf.fluidwall.LAYERTEST
 
 # 自检：着色器能否编译、壁纸能否读到
-adb shell am broadcast -a com.eta.fluidwall.SELFTEST
+adb shell am broadcast -a com.txf.fluidwall.SELFTEST
 ```
 
 ## 已知问题

@@ -1,4 +1,4 @@
-package com.eta.fluidwall.core
+package com.txf.fluidwall.core
 
 import android.content.Context
 import android.net.Uri
@@ -28,7 +28,7 @@ data class FluidConfig(
         .toString()
 
     companion object {
-        const val AUTHORITY = "com.eta.fluidwall.config"
+        const val AUTHORITY = "com.txf.fluidwall.config"
 
         fun parse(raw: String?): FluidConfig {
             if (raw.isNullOrBlank()) return FluidConfig()

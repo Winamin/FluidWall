@@ -1,6 +1,6 @@
-package com.eta.fluidwall.xposed
+package com.txf.fluidwall.xposed
 
-import com.eta.fluidwall.core.XLog
+import com.txf.fluidwall.core.XLog
 import io.github.libxposed.api.XposedModule
 import io.github.libxposed.api.XposedModuleInterface
 

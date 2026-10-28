@@ -1,4 +1,4 @@
-package com.eta.fluidwall
+package com.txf.fluidwall
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -38,12 +38,12 @@ import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
-import com.eta.fluidwall.core.ColorKMeans
-import com.eta.fluidwall.core.ConfigStore
-import com.eta.fluidwall.core.FluidConfig
-import com.eta.fluidwall.core.FluidTransitionView
-import com.eta.fluidwall.core.WallpaperBridge
-import com.eta.fluidwall.core.WallpaperStore
+import com.txf.fluidwall.core.ColorKMeans
+import com.txf.fluidwall.core.ConfigStore
+import com.txf.fluidwall.core.FluidConfig
+import com.txf.fluidwall.core.FluidTransitionView
+import com.txf.fluidwall.core.WallpaperBridge
+import com.txf.fluidwall.core.WallpaperStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.basic.Button

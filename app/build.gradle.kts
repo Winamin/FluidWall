@@ -4,11 +4,11 @@ plugins {
 }
 
 android {
-    namespace = "com.eta.fluidwall"
+    namespace = "com.txf.fluidwall"
     compileSdk = 37
 
     defaultConfig {
-        applicationId = "com.eta.fluidwall"
+        applicationId = "com.txf.fluidwall"
         minSdk = 33
         targetSdk = 36
         versionCode = 20261027

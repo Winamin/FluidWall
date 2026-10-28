@@ -1,8 +1,8 @@
-package com.eta.fluidwall
+package com.txf.fluidwall
 
 import android.app.Application
-import com.eta.fluidwall.core.ConfigStore
-import com.eta.fluidwall.xposed.FluidModule
+import com.txf.fluidwall.core.ConfigStore
+import com.txf.fluidwall.xposed.FluidModule
 
 class FluidApp : Application() {
 

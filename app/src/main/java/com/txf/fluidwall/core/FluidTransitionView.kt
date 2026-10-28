@@ -1,4 +1,4 @@
-package com.eta.fluidwall.core
+package com.txf.fluidwall.core
 
 import android.animation.Animator
 import android.animation.AnimatorListenerAdapter

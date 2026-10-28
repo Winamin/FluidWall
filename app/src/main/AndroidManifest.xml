@@ -23,7 +23,7 @@
 
         <provider
             android:name=".core.ConfigProvider"
-            android:authorities="com.eta.fluidwall.config"
+            android:authorities="com.txf.fluidwall.config"
             android:exported="true"
             android:grantUriPermissions="true" />
 
@@ -31,7 +31,7 @@
             android:name=".core.SelfTestReceiver"
             android:exported="true">
             <intent-filter>
-                <action android:name="com.eta.fluidwall.SELFTEST" />
+                <action android:name="com.txf.fluidwall.SELFTEST" />
             </intent-filter>
         </receiver>
 
