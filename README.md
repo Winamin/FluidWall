@@ -34,6 +34,7 @@
 
 第一次用建议锁屏后等两秒再解锁，让壁纸缓存先准备好。
 
+
 ## 构建
 
 需要 JDK 17 及以上（推荐 21）和 Android SDK（`compileSdk 37` 对应的 platform 与 build-tools）。SDK 位置用 `ANDROID_HOME` 或 `local.properties` 里的 `sdk.dir` 指定。
@@ -48,13 +49,14 @@ cd FluidWall
 
 - AGP 9.3.1 / Gradle 9.6.1 / Kotlin 2.3.21，界面用 Compose + Miuix 0.9.3
 - 签名用的是仓库里的 `keystore/fluidwall.jks`（store/key 密码都是 `fluidwall`），只是为了方便复现构建，发布前请换成自己的
-- 根目录的 `app-release.apk` 是打好的 v1.0，源码之后如果又改过，可能比它新
 
 用 Android Studio 打开也一样，先配好 SDK 就行。
 
 ## 大致怎么做的
 
 **取壁纸。** Android 13+ 普通 App 读不到壁纸，所以由壁纸进程（`com.miui.miwallpaper`）通过 hook 读出锁屏和桌面壁纸，再用 `ContentProvider.call()` 分块写到模块 App 的私有目录。设置页直接读缓存做预览，解锁时也用这份缓存兜底。
+
+设置页打开和点击「重新检测」时会请求重新导出，收到导出回报后自动刷新预览。服务启动时尚未就绪会重试；缓存写入完成前保留旧图。自检只检查 APK 中的 Xposed 入口定义，实际注入状态以壁纸进程的 Hook 回报为准。
 
 **放图层。** 在桌面的 `decorView` 第 0 层插一个全屏的 `FluidTransitionView`，位置在壁纸之上、图标之下。锁屏期间这个 View 先显示锁屏壁纸的静态帧，解锁时就不会闪一下桌面壁纸。
 
