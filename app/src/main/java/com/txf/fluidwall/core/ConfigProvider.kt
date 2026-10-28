@@ -7,12 +7,28 @@ import android.database.Cursor
 import android.database.MatrixCursor
 import android.net.Uri
 import android.os.Bundle
+import android.os.ParcelFileDescriptor
+import java.io.File
 
 class ConfigProvider : ContentProvider() {
 
     override fun onCreate(): Boolean {
         context?.let { LogStore.init(it) }
         return true
+    }
+
+    override fun openFile(uri: Uri, mode: String): ParcelFileDescriptor? {
+        val ctx: Context = context ?: return null
+        val name = uri.lastPathSegment ?: return null
+        if (name != "lock" && name != "home") return null
+        val f = File(File(ctx.filesDir, "wallpaper"), "$name.jpg")
+        if (!f.exists() || f.length() == 0L) return null
+        return try {
+            ParcelFileDescriptor.open(f, ParcelFileDescriptor.MODE_READ_ONLY)
+        } catch (t: Throwable) {
+            XLog.i("provider openFile $name failed: $t")
+            null
+        }
     }
 
     override fun query(

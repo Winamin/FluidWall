@@ -8,16 +8,20 @@ import android.graphics.drawable.Drawable
 import android.os.Handler
 import android.os.Looper
 import com.txf.fluidwall.core.ColorKMeans
+import com.txf.fluidwall.core.HookStatus
 import com.txf.fluidwall.core.WallpaperBridge
 import com.txf.fluidwall.core.WallpaperStore
 import com.txf.fluidwall.core.XLog
 import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XposedHelpers
+import java.util.concurrent.atomic.AtomicBoolean
 
 object HookWallpaper {
 
     private var installed = false
     private val main = Handler(Looper.getMainLooper())
+    private val exporting = AtomicBoolean(false)
+    private var drawableHooked = false
 
     @Volatile
     var hintColor: Int = 0
@@ -27,14 +31,28 @@ object HookWallpaper {
         if (installed) return
         installed = true
         HookUtil.appInit { ctx ->
-            hookDrawable(cl)
-            exportAsync(ctx)
+            drawableHooked = hookDrawable(cl)
             watchChanges(ctx)
+            exportAsync(ctx)
         }
     }
 
     private fun exportAsync(ctx: Context) {
-        Thread({ WallpaperStore.exportViaApp(ctx) }, "fluid-wp-export").start()
+        if (!exporting.compareAndSet(false, true)) return
+        Thread({
+            try {
+                HookStatus.report(
+                    ctx,
+                    HookStatus.WALLPAPER_HOOK,
+                    drawableHooked,
+                    if (drawableHooked) "WallpaperManager.getDrawable 已 Hook"
+                    else "WallpaperManager.getDrawable Hook 失败，详见日志",
+                )
+                WallpaperStore.exportViaApp(ctx)
+            } finally {
+                exporting.set(false)
+            }
+        }, "fluid-wp-export").start()
     }
 
     private fun watchChanges(ctx: Context) {
@@ -46,7 +64,10 @@ object HookWallpaper {
                         main.postDelayed({ exportAsync(c ?: app) }, 1500L)
                     }
                 },
-                IntentFilter(Intent.ACTION_WALLPAPER_CHANGED),
+                IntentFilter().apply {
+                    addAction(Intent.ACTION_WALLPAPER_CHANGED)
+                    addAction(WallpaperStore.ACTION_EXPORT)
+                },
                 Context.RECEIVER_EXPORTED,
             )
         } catch (t: Throwable) {
@@ -54,8 +75,8 @@ object HookWallpaper {
         }
     }
 
-    private fun hookDrawable(cl: ClassLoader) {
-        try {
+    private fun hookDrawable(cl: ClassLoader): Boolean {
+        return try {
             XposedHelpers.findAndHookMethod(
                 "android.app.WallpaperManager",
                 cl,
@@ -82,8 +103,10 @@ object HookWallpaper {
                 },
             )
             XLog.i("WallpaperManager.getDrawable hook ok")
+            true
         } catch (t: Throwable) {
             XLog.i("WallpaperManager hook failed: $t")
+            false
         }
     }
 }

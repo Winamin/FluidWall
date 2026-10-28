@@ -106,6 +106,7 @@ object LauncherLayer {
 
         val app = activity.applicationContext
         ctx = app
+        LogStore.init(app)
         cfg = FluidConfig.read(app)
         if (km == null) {
             km = app.getSystemService(Context.KEYGUARD_SERVICE) as? KeyguardManager
@@ -180,7 +181,9 @@ object LauncherLayer {
                 object : BroadcastReceiver() {
                     override fun onReceive(c: Context?, i: Intent?) = onWallpaperChanged()
                 },
-                IntentFilter(Intent.ACTION_WALLPAPER_CHANGED),
+                IntentFilter(Intent.ACTION_WALLPAPER_CHANGED).apply {
+                    addAction(WallpaperStore.ACTION_CACHE_UPDATED)
+                },
                 Context.RECEIVER_EXPORTED,
             )
         } catch (t: Throwable) {
@@ -235,12 +238,16 @@ object LauncherLayer {
             } catch (t: Throwable) {
                 XLog.i("direct wallpaper read failed: $t")
             }
-            if (lock == null) lock = WallpaperStore.load(WallpaperStore.LOCK)
-            if (home == null) home = WallpaperStore.load(WallpaperStore.HOME)
+            if (lock == null) lock = WallpaperStore.loadRemote(app, "lock")
+                ?: WallpaperStore.load(WallpaperStore.LOCK)
+            if (home == null) home = WallpaperStore.loadRemote(app, "home")
+                ?: WallpaperStore.load(WallpaperStore.HOME)
+            if (lock == null) lock = home?.let { WallpaperBridge.blurred(it, 14) }
             val l = lock
             val h = home ?: lock
             if (l == null || h == null) {
                 XLog.i("no wallpaper bitmaps yet")
+                WallpaperStore.requestExport(app)
                 loading = false
                 return@Thread
             }
@@ -308,7 +315,14 @@ object LauncherLayer {
 
     // ---------------------------------------------------------------- trigger
 
+    @android.annotation.SuppressLint("MissingPermission") // Host privilege checked below, not in our APK.
     private fun watchKeyguard(app: Context) {
+        if (app.checkSelfPermission("android.permission.SUBSCRIBE_TO_KEYGUARD_LOCKED_STATE") !=
+            android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            XLog.i("keyguard listener unavailable, rely on launcher hooks")
+            return
+        }
         try {
             val manager = app.getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
             ignoreUntil = SystemClock.uptimeMillis() + IGNORE_AFTER_REGISTER_MS

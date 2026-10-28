@@ -1,7 +1,9 @@
 package com.txf.fluidwall.core
 
+import android.annotation.SuppressLint
 import android.app.WallpaperManager
 import android.content.Context
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
@@ -11,6 +13,8 @@ import android.graphics.RadialGradient
 import android.graphics.Rect
 import android.graphics.Shader
 import android.graphics.drawable.Drawable
+import android.os.Build
+import android.os.Environment
 import kotlin.math.max
 import kotlin.math.min
 
@@ -18,32 +22,65 @@ object WallpaperBridge {
 
     private const val MAX_DIM = 1440
 
+    @Volatile
+    private var accessWarned = false
+
+    /**
+     * Android 14+ no longer lets a normal app read the real wallpaper through WallpaperManager.
+     * getWallpaperFile()/getDrawable() are guarded by READ_WALLPAPER_INTERNAL (signature) or
+     * MANAGE_EXTERNAL_STORAGE, and throw SecurityException otherwise. The launcher and the
+     * wallpaper process both hold one of those, the settings app holds neither, so it must use
+     * the cache exported by the wallpaper process instead of retrying a doomed call.
+     */
+    fun canReadSystem(ctx: Context): Boolean = try {
+        if (Build.VERSION.SDK_INT < 33) {
+            true
+        } else {
+            ctx.checkSelfPermission("android.permission.READ_WALLPAPER_INTERNAL") ==
+                PackageManager.PERMISSION_GRANTED ||
+                Environment.isExternalStorageManager()
+        }
+    } catch (_: Throwable) {
+        false
+    }
+
     fun lockBitmap(ctx: Context, maxDim: Int = MAX_DIM): Bitmap? =
         fullRes(ctx, WallpaperManager.FLAG_LOCK, maxDim)
             ?: drawableToBitmap(lockDrawable(ctx), maxDim)
 
-    fun homeBitmap(ctx: Context, maxDim: Int = MAX_DIM): Bitmap? = try {
-        fullRes(ctx, WallpaperManager.FLAG_SYSTEM, maxDim)
-            ?: drawableToBitmap(WallpaperManager.getInstance(ctx).drawable, maxDim)
-    } catch (t: Throwable) {
-        XLog.i("homeBitmap failed: $t")
-        null
+    // canReadSystem checks the host process's privileges; the settings APK cannot request them.
+    @SuppressLint("MissingPermission")
+    fun homeBitmap(ctx: Context, maxDim: Int = MAX_DIM): Bitmap? {
+        if (!canReadSystem(ctx)) {
+            warnOnce("system wallpaper access unavailable, using exported cache")
+            return null
+        }
+        return try {
+            fullRes(ctx, WallpaperManager.FLAG_SYSTEM, maxDim)
+                ?: drawableToBitmap(WallpaperManager.getInstance(ctx).drawable, maxDim)
+        } catch (t: Throwable) {
+            if (!isAccessDenied(t)) XLog.i("homeBitmap failed: $t")
+            null
+        }
     }
 
     /** Full resolution copy straight from the wallpaper service, avoids the downscaled drawable. */
-    fun fullRes(ctx: Context, which: Int, maxDim: Int): Bitmap? = try {
-        val wm = WallpaperManager.getInstance(ctx)
-        val pfd = wm.getWallpaperFile(which)
-        if (pfd == null) {
-            null
-        } else {
-            val bmp = BitmapFactory.decodeFileDescriptor(pfd.fileDescriptor)
-            pfd.close()
-            if (bmp == null) null else scaleDown(bmp, maxDim)
+    @SuppressLint("MissingPermission") // Checked by canReadSystem, including the all-files app-op.
+    fun fullRes(ctx: Context, which: Int, maxDim: Int): Bitmap? {
+        if (!canReadSystem(ctx)) {
+            warnOnce("system wallpaper access unavailable, using exported cache")
+            return null
         }
-    } catch (t: Throwable) {
-        XLog.i("fullRes($which) failed: $t")
-        null
+        return try {
+            val wm = WallpaperManager.getInstance(ctx)
+            wm.getWallpaperFile(which)?.use { pfd ->
+                val bmp = BitmapFactory.decodeFileDescriptor(pfd.fileDescriptor)
+                if (bmp == null) null else scaleDown(bmp, maxDim)
+            }
+        } catch (t: Throwable) {
+            if (!isAccessDenied(t)) XLog.i("fullRes($which) failed: $t")
+            null
+        }
     }
 
     fun scaleDown(bmp: Bitmap, maxDim: Int): Bitmap {
@@ -60,11 +97,24 @@ object WallpaperBridge {
         return out
     }
 
-    fun lockDrawable(ctx: Context): Drawable? = try {
-        WallpaperManager.getInstance(ctx).getDrawable(WallpaperManager.FLAG_LOCK)
-    } catch (t: Throwable) {
-        XLog.i("lockDrawable failed: $t")
-        null
+    @SuppressLint("MissingPermission") // Uses the same host permission gate as fullRes.
+    fun lockDrawable(ctx: Context): Drawable? {
+        if (Build.VERSION.SDK_INT < 34 || !canReadSystem(ctx)) return null
+        return try {
+            WallpaperManager.getInstance(ctx).getDrawable(WallpaperManager.FLAG_LOCK)
+        } catch (t: Throwable) {
+            if (!isAccessDenied(t)) XLog.i("lockDrawable failed: $t")
+            null
+        }
+    }
+
+    private fun isAccessDenied(t: Throwable): Boolean =
+        t is SecurityException || t.cause is SecurityException
+
+    private fun warnOnce(message: String) {
+        if (accessWarned) return
+        accessWarned = true
+        XLog.i(message)
     }
 
     fun blurred(src: Bitmap, factor: Int = 10): Bitmap {
@@ -75,7 +125,7 @@ object WallpaperBridge {
         val c = Canvas(out)
         val p = Paint(Paint.FILTER_BITMAP_FLAG)
         c.drawBitmap(small, null, Rect(0, 0, out.width, out.height), p)
-        if (small !== out) small.recycle()
+        if (small !== src) small.recycle()
         return out
     }
 

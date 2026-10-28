@@ -13,6 +13,7 @@ android {
         targetSdk = 36
         versionCode = 20261027
         versionName = "1.0"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         multiDexKeepProguard = file("multidex-keep.pro")
     }
 
@@ -61,4 +62,6 @@ dependencies {
     implementation("androidx.activity:activity-compose:1.10.1")
     implementation("top.yukonga.miuix.kmp:miuix-ui-android:0.9.3")
     implementation("top.yukonga.miuix.kmp:miuix-preference-android:0.9.3")
+    androidTestImplementation("androidx.test:runner:1.6.2")
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
 }
