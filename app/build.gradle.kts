@@ -11,8 +11,8 @@ android {
         applicationId = "com.txf.fluidwall"
         minSdk = 33
         targetSdk = 36
-        versionCode = 20261027
-        versionName = "1.0"
+        versionCode = 20261028
+        versionName = "1.0.1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         multiDexKeepProguard = file("multidex-keep.pro")
     }
