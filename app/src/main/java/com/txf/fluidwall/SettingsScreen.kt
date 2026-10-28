@@ -1,5 +1,10 @@
 package com.txf.fluidwall
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.graphics.Bitmap
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -16,6 +21,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -23,6 +29,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -35,6 +42,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -42,18 +50,25 @@ import com.txf.fluidwall.core.ColorKMeans
 import com.txf.fluidwall.core.ConfigStore
 import com.txf.fluidwall.core.FluidConfig
 import com.txf.fluidwall.core.FluidTransitionView
+import com.txf.fluidwall.core.HookStatus
+import com.txf.fluidwall.core.LogStore
 import com.txf.fluidwall.core.WallpaperBridge
 import com.txf.fluidwall.core.WallpaperStore
+import com.txf.fluidwall.core.XLog
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.basic.Button
+import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
+import top.yukonga.miuix.kmp.basic.CardDefaults
 import top.yukonga.miuix.kmp.basic.HorizontalDivider
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.NavigationBar
 import top.yukonga.miuix.kmp.basic.NavigationBarItem
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.Text
+import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.basic.TopAppBar
 import top.yukonga.miuix.kmp.preference.SliderPreference
 import top.yukonga.miuix.kmp.preference.SwitchPreference
@@ -68,6 +83,11 @@ fun FluidWallApp() {
     var cfg by remember { mutableStateOf(ConfigStore.load(ctx)) }
     var tab by remember { mutableIntStateOf(0) }
     val controller = remember { ThemeController(ColorSchemeMode.System) }
+    val title = when (tab) {
+        1 -> "关于"
+        2 -> "日志"
+        else -> "流体壁纸"
+    }
 
     fun update(next: FluidConfig) {
         cfg = next
@@ -76,15 +96,20 @@ fun FluidWallApp() {
 
     MiuixTheme(controller = controller) {
         Scaffold(
-            topBar = { TopAppBar(title = "流体壁纸", largeTitle = "流体壁纸") },
+            topBar = { TopAppBar(title = title, largeTitle = title) },
             bottomBar = {
                 NavigationBar {
                     Item(IconSettings, "设置", tab == 0) { tab = 0 }
                     Item(IconInfo, "关于", tab == 1) { tab = 1 }
+                    Item(IconLog, "日志", tab == 2) { tab = 2 }
                 }
             },
         ) { padding ->
-            if (tab == 0) SettingsTab(cfg, padding, ::update) else AboutTab(padding)
+            when (tab) {
+                0 -> SettingsTab(cfg, padding, ::update, onOpenLog = { tab = 2 })
+                1 -> AboutTab(padding)
+                else -> LogTab(padding)
+            }
         }
     }
 }
@@ -139,6 +164,25 @@ private val IconInfo: ImageVector
             verticalLineTo(16.6f)
             moveTo(12f, 7.4f)
             verticalLineTo(7.9f)
+        }
+    }
+
+private val IconLog: ImageVector
+    get() = materialIcon("log") {
+        path(strokeWidth = 1.9f) {
+            moveTo(6.5f, 3.8f)
+            horizontalLineTo(17.5f)
+            verticalLineTo(20.2f)
+            horizontalLineTo(6.5f)
+            close()
+        }
+        path(strokeWidth = 1.7f) {
+            moveTo(9.2f, 8f)
+            horizontalLineTo(14.8f)
+            moveTo(9.2f, 12f)
+            horizontalLineTo(14.8f)
+            moveTo(9.2f, 16f)
+            horizontalLineTo(12.8f)
         }
     }
 
@@ -210,8 +254,51 @@ private fun SectionTitle(title: String) {
     )
 }
 
+private data class PreviewState(
+    val loading: Boolean = true,
+    val loaded: Boolean = false,
+    val found: Boolean = false,
+    val detail: String = "",
+)
+
+private data class PreviewLoad(
+    val lock: Bitmap?,
+    val home: Bitmap?,
+    val palette: ColorKMeans.Palette?,
+    val found: Boolean,
+    val detail: String,
+)
+
 @Composable
-private fun SettingsTab(cfg: FluidConfig, padding: PaddingValues, update: (FluidConfig) -> Unit) {
+private fun SettingsTab(
+    cfg: FluidConfig,
+    padding: PaddingValues,
+    update: (FluidConfig) -> Unit,
+    onOpenLog: () -> Unit,
+) {
+    val ctx = LocalContext.current
+    var preview by remember { mutableStateOf(PreviewState()) }
+    var status by remember { mutableStateOf(HookStatus.read(ctx)) }
+    var reloadToken by remember { mutableIntStateOf(0) }
+
+    LaunchedEffect(Unit) {
+        WallpaperStore.requestExport(ctx)
+        while (true) {
+            val latest = HookStatus.read(ctx)
+            if (latest.wallpaperExport?.ok == true &&
+                latest.wallpaperExport.at != status.wallpaperExport?.at
+            ) reloadToken++
+            status = latest
+            delay(3000L)
+        }
+    }
+
+    fun reload() {
+        WallpaperStore.requestExport(ctx)
+        reloadToken++
+        status = HookStatus.read(ctx)
+    }
+
     Column(
         Modifier
             .fillMaxSize()
@@ -220,7 +307,10 @@ private fun SettingsTab(cfg: FluidConfig, padding: PaddingValues, update: (Fluid
             .padding(horizontal = 16.dp)
             .padding(bottom = 28.dp),
     ) {
-        PreviewCard(cfg)
+        WallpaperIssueCard(status, preview, onOpenLog, ::reload)
+        Spacer(Modifier.height(if (hasWallpaperIssue(status, preview)) 12.dp else 0.dp))
+
+        PreviewCard(cfg, reloadToken) { preview = it }
         Spacer(Modifier.height(12.dp))
 
         Card {
@@ -306,15 +396,135 @@ private fun SettingsTab(cfg: FluidConfig, padding: PaddingValues, update: (Fluid
     }
 }
 
+private fun hasWallpaperIssue(status: HookStatus.Snapshot, preview: PreviewState): Boolean =
+    status.wallpaperHook?.ok == false ||
+        status.wallpaperExport?.ok == false ||
+        (preview.loaded && !preview.found)
+
 @Composable
-private fun PreviewCard(cfg: FluidConfig) {
+private fun WallpaperIssueCard(
+    status: HookStatus.Snapshot,
+    preview: PreviewState,
+    onOpenLog: () -> Unit,
+    onRetry: () -> Unit,
+) {
+    if (!hasWallpaperIssue(status, preview)) return
+    val ctx = LocalContext.current
+    val hook = status.wallpaperHook
+    val export = status.wallpaperExport
+    val hookFailed = hook?.ok == false
+    val exportFailed = export?.ok == false
+    val missing = preview.loaded && !preview.found
+    val title = when {
+        missing && hookFailed -> "壁纸 Hook 失败，且找不到壁纸"
+        missing && exportFailed -> "壁纸导出失败，且找不到壁纸"
+        missing && hook == null && export == null -> "等待壁纸进程回报"
+        missing -> "找不到壁纸"
+        exportFailed -> "壁纸导出失败"
+        else -> "壁纸 Hook 失败"
+    }
+    val reasons = buildList {
+        if (missing) {
+            add(preview.detail.ifBlank { "系统壁纸服务、模块缓存和共享目录都没有返回壁纸，预览显示的是演示图。" })
+        }
+        if (hook != null && !hook.ok) add("壁纸 Hook：${hook.detail.ifBlank { "初始化失败" }}")
+        if (export != null && !export.ok) add("壁纸导出：${export.detail.ifBlank { "导出失败" }}")
+        if (missing && hook == null && export == null) {
+            add("尚未收到壁纸进程的 Hook 回报。请确认 LSPosed 作用域勾选了「系统桌面」和「壁纸」，然后重启桌面或手机。")
+        }
+        if (!missing && (hookFailed || exportFailed)) {
+            add("预览已有可用壁纸，但最新的 Hook 或导出检查未通过，建议查看日志确认原因。")
+        }
+    }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.defaultColors(
+            color = MiuixTheme.colorScheme.errorContainer,
+            contentColor = MiuixTheme.colorScheme.onErrorContainer,
+        ),
+    ) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+        ) {
+            Text(
+                text = title,
+                style = MiuixTheme.textStyles.subtitle,
+                color = MiuixTheme.colorScheme.error,
+            )
+            Spacer(Modifier.height(8.dp))
+            reasons.forEach { reason ->
+                Text(
+                    text = "· $reason",
+                    style = MiuixTheme.textStyles.body2,
+                    color = MiuixTheme.colorScheme.onErrorContainer,
+                )
+                Spacer(Modifier.height(4.dp))
+            }
+            /*
+            if (preview.loading) {
+                Text(
+                    text = "正在重新检测，结果出来前会一直保留提示。",
+                    style = MiuixTheme.textStyles.footnote1,
+                    color = MiuixTheme.colorScheme.error,
+                )
+            }
+
+             */
+            Spacer(Modifier.height(8.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Button(onClick = onOpenLog) {
+                    Text("查看日志", style = MiuixTheme.textStyles.button)
+                }
+                Spacer(Modifier.width(8.dp))
+                Button(
+                    onClick = { copyLogs(ctx) },
+                    colors = ButtonDefaults.buttonColorsPrimary(),
+                ) {
+                    Text("复制日志", style = MiuixTheme.textStyles.button)
+                }
+                Spacer(Modifier.weight(1f))
+                TextButton(
+                    text = if (preview.loading) "检测中…" else "重新检测",
+                    onClick = onRetry,
+                    enabled = !preview.loading,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun PreviewCard(
+    cfg: FluidConfig,
+    reloadToken: Int,
+    onState: (PreviewState) -> Unit,
+) {
     val ctx = LocalContext.current
     var view by remember { mutableStateOf<FluidTransitionView?>(null) }
-    var pal by remember { mutableStateOf<ColorKMeans.Palette?>(null) }
     var loaded by remember { mutableStateOf(false) }
+    var found by remember { mutableStateOf(false) }
+    var lastDetail by remember { mutableStateOf("") }
+    val onStateNow by rememberUpdatedState(onState)
 
-    LaunchedEffect(Unit) {
-        val bitmaps = withContext(Dispatchers.IO) {
+    LaunchedEffect(reloadToken) {
+        val previousLoaded = loaded
+        val previousFound = found
+        val previousDetail = lastDetail
+        onStateNow(
+            PreviewState(
+                loading = true,
+                loaded = previousLoaded,
+                found = previousFound,
+                detail = previousDetail,
+            ),
+        )
+        val result = withContext(Dispatchers.IO) {
             val home = WallpaperStore.loadLocal(ctx, "home", 1080)
                 ?: WallpaperBridge.homeBitmap(ctx, 1080)
                 ?: WallpaperStore.load(WallpaperStore.HOME)
@@ -322,21 +532,42 @@ private fun PreviewCard(cfg: FluidConfig) {
                 ?: WallpaperBridge.lockBitmap(ctx, 1080)
                 ?: WallpaperStore.load(WallpaperStore.LOCK)
                 ?: home?.let { WallpaperBridge.blurred(it, 14) }
-            if (lock == null && home == null) {
-                WallpaperBridge.demoLock() to WallpaperBridge.demoHome()
-            } else {
-                lock to (home ?: lock)
+            val hasWallpaper = lock != null || home != null
+            val finalLock = lock ?: if (hasWallpaper) null else WallpaperBridge.demoLock()
+            val finalHome = home ?: lock ?: if (hasWallpaper) null else WallpaperBridge.demoHome()
+            val palette = (finalLock ?: finalHome)?.let { ColorKMeans.extract(it) }
+            if (!hasWallpaper) {
+                XLog.i("preview wallpaper not found: system, cache and shared storage are empty")
             }
+            PreviewLoad(
+                lock = finalLock,
+                home = finalHome,
+                palette = palette,
+                found = hasWallpaper,
+                detail = if (hasWallpaper) {
+                    ""
+                } else {
+                    "系统壁纸服务、模块缓存和共享目录都没有返回壁纸，预览显示的是演示图。"
+                },
+            )
         }
-        val lock = bitmaps.first
-        val home = bitmaps.second
-        val p = withContext(Dispatchers.IO) { (lock ?: home)?.let { ColorKMeans.extract(it) } }
-        pal = p
-        val v = view ?: return@LaunchedEffect
-        v.tint = p?.tint ?: 0xFF6FA8FF.toInt()
-        v.setBitmaps(lock, home ?: lock)
+        val v = view
+        if (v != null) {
+            v.tint = result.palette?.tint ?: 0xFF6FA8FF.toInt()
+            v.setBitmaps(result.lock, result.home ?: result.lock)
+            v.play(1200)
+        }
         loaded = true
-        v.play(1200)
+        found = result.found
+        lastDetail = result.detail
+        onStateNow(
+            PreviewState(
+                loading = false,
+                loaded = true,
+                found = result.found,
+                detail = result.detail,
+            ),
+        )
     }
 
     LaunchedEffect(cfg) {
@@ -379,13 +610,107 @@ private fun PreviewCard(cfg: FluidConfig) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                if (loaded) "当前桌面壁纸" else "正在读取壁纸…",
+                when {
+                    !loaded -> "正在读取壁纸…"
+                    found -> "当前桌面壁纸"
+                    else -> "未找到壁纸，正在预览演示图"
+                },
                 style = MiuixTheme.textStyles.footnote1,
-                color = MiuixTheme.colorScheme.onBackgroundVariant,
+                color = if (loaded && !found) {
+                    MiuixTheme.colorScheme.error
+                } else {
+                    MiuixTheme.colorScheme.onBackgroundVariant
+                },
             )
-            Spacer(Modifier.weight(1f))
-            // 之前的空变量已清理
         }
+    }
+}
+
+@Composable
+private fun LogTab(padding: PaddingValues) {
+    val ctx = LocalContext.current
+    var logText by remember { mutableStateOf("") }
+    var refresh by remember { mutableIntStateOf(0) }
+
+    LaunchedEffect(refresh) {
+        logText = withContext(Dispatchers.IO) { LogStore.read(ctx) }
+    }
+
+    Column(
+        Modifier
+            .fillMaxSize()
+            .padding(padding)
+            .padding(horizontal = 16.dp)
+            .padding(bottom = 12.dp),
+    ) {
+        Card {
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+            ) {
+                Text(
+                    text = "运行日志",
+                    style = MiuixTheme.textStyles.subtitle,
+                    color = MiuixTheme.colorScheme.onBackground,
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = "包含设置页、桌面 Hook 和壁纸进程通过模块转发的最新日志。",
+                    style = MiuixTheme.textStyles.footnote1,
+                    color = MiuixTheme.colorScheme.onBackgroundVariant,
+                )
+                Spacer(Modifier.height(12.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(onClick = { refresh++ }) {
+                        Text("刷新", style = MiuixTheme.textStyles.button)
+                    }
+                    Button(
+                        onClick = { copyLogs(ctx) },
+                        colors = ButtonDefaults.buttonColorsPrimary(),
+                    ) {
+                        Text("复制日志", style = MiuixTheme.textStyles.button)
+                    }
+                }
+            }
+        }
+        Spacer(Modifier.height(12.dp))
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f),
+        ) {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 16.dp, vertical = 12.dp)
+                    .verticalScroll(rememberScrollState()),
+            ) {
+                SelectionContainer {
+                    Text(
+                        text = logText.ifBlank { "正在读取日志…" },
+                        style = MiuixTheme.textStyles.footnote1,
+                        fontFamily = FontFamily.Monospace,
+                        color = MiuixTheme.colorScheme.onBackgroundVariant,
+                    )
+                }
+            }
+        }
+    }
+}
+
+private fun copyLogs(ctx: Context) {
+    try {
+        val text = LogStore.read(ctx)
+        val manager = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+        if (manager == null) {
+            Toast.makeText(ctx, "无法访问剪贴板", Toast.LENGTH_SHORT).show()
+            return
+        }
+        manager.setPrimaryClip(ClipData.newPlainText("FluidWall 日志", text))
+        Toast.makeText(ctx, "日志已复制", Toast.LENGTH_SHORT).show()
+    } catch (t: Throwable) {
+        Toast.makeText(ctx, "复制失败：$t", Toast.LENGTH_SHORT).show()
     }
 }
 
