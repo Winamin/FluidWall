@@ -22,9 +22,11 @@ import com.txf.fluidwall.core.WallpaperStore
 import com.txf.fluidwall.core.XLog
 import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XposedBridge
+import java.lang.ref.WeakReference
 import java.lang.reflect.Method
 import java.util.IdentityHashMap
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * HyperOS native Launcher has no DEX. The supplied 7.1.3 wallpaper APK still draws ordinary
@@ -38,6 +40,8 @@ internal object HookOs4Wallpaper {
         Thread(r, "fluid-os4-assets").apply { isDaemon = true }
     }
     private var installed = false
+    @Volatile private var diagnosticContext: WeakReference<Context>? = null
+    private val callbackFailureReported = AtomicBoolean(false)
 
     fun install(ctx: Context, cl: ClassLoader) {
         if (installed || ctx.packageName != "com.miui.miwallpaper") return
@@ -50,6 +54,7 @@ internal object HookOs4Wallpaper {
             return
         }
         if (!nativeLauncher) return // Keep the existing Java-launcher path on older systems.
+        diagnosticContext = WeakReference(ctx.applicationContext ?: ctx)
 
         val hooks = ArrayList<XC_MethodHook.Unhook>()
         try {
@@ -61,13 +66,13 @@ internal object HookOs4Wallpaper {
             val animRenderer = cl.loadClass(ROOT + "opengl.AnimImageWallpaperRenderer")
             val getRenderer = engine.getMethod("P")
             val getHandler = engine.getMethod("G")
-            val refresh = animRenderer.getDeclaredMethod("refresh", Boolean::class.javaPrimitiveType)
-            val draw = baseRenderer.getDeclaredMethod("onDrawFrame")
-            val finish = renderer.getDeclaredMethod("finish")
-            val bind = engine.getDeclaredMethod("F", universalEngine)
-            val surfaceDestroyed = checkNotNull(engine.superclass).getDeclaredMethod("q")
-            val lock = engine.getDeclaredMethod("showKeyguardWallpaper", Boolean::class.javaPrimitiveType, Int::class.javaPrimitiveType)
-            val unlocks = listOf(
+            val refreshMethod = animRenderer.getDeclaredMethod("refresh", Boolean::class.javaPrimitiveType)
+            val drawMethod = baseRenderer.getDeclaredMethod("onDrawFrame")
+            val finishMethod = renderer.getDeclaredMethod("finish")
+            val bindMethod = engine.getDeclaredMethod("F", universalEngine)
+            val surfaceDestroyedMethod = checkNotNull(engine.superclass).getDeclaredMethod("q")
+            val lockMethod = engine.getDeclaredMethod("showKeyguardWallpaper", Boolean::class.javaPrimitiveType, Int::class.javaPrimitiveType)
+            val unlockMethods = listOf(
                 engine.getDeclaredMethod("hideKeyguardWallpaper", Boolean::class.javaPrimitiveType, Int::class.javaPrimitiveType),
                 engine.getDeclaredMethod("hideKeyguardWallpaper"),
                 engine.getDeclaredMethod("showWallpaperUnlockAnim"),
@@ -80,39 +85,39 @@ internal object HookOs4Wallpaper {
                 val target = getRenderer.invoke(p.thisObject) ?: return@after
                 if (target.javaClass != renderer) return@after
                 val handler = getHandler.invoke(p.thisObject) as Handler
-                val playback = Playback(ctx, handler, target, refresh)
+                val playback = Playback(ctx, handler, target, refreshMethod)
                 synchronized(sessions) { sessions[target] = playback }
-                playback.post { initialize() }
+                playback.post { it.initialize() }
             })
-            hooks += XposedBridge.hookMethod(bind, before { p ->
+            hooks += XposedBridge.hookMethod(bindMethod, before { p ->
                 val preview = (p.args[0] as? WallpaperService.Engine)?.isPreview ?: true
-                forEngine(p.thisObject)?.post { bind(preview) }
+                forEngine(p.thisObject)?.post { it.bind(preview) }
             })
-            hooks += XposedBridge.hookMethod(lock, before { p ->
-                forEngine(p.thisObject)?.post { lock("keyguard") }
+            hooks += XposedBridge.hookMethod(lockMethod, before { p ->
+                forEngine(p.thisObject)?.post { it.lock("keyguard") }
             })
-            hooks += XposedBridge.hookMethod(surfaceDestroyed, before { p ->
-                if (engine.isInstance(p.thisObject)) forEngine(p.thisObject)?.post { surfaceLost() }
+            hooks += XposedBridge.hookMethod(surfaceDestroyedMethod, before { p ->
+                if (engine.isInstance(p.thisObject)) forEngine(p.thisObject)?.post { it.surfaceLost() }
             })
-            for (method in unlocks) {
+            for (method in unlockMethods) {
                 hooks += XposedBridge.hookMethod(method, before { p ->
-                    forEngine(p.thisObject)?.post { unlock(method.name) }
+                    forEngine(p.thisObject)?.post { it.unlock(method.name) }
                 })
             }
-            hooks += XposedBridge.hookMethod(draw, after { p ->
+            hooks += XposedBridge.hookMethod(drawMethod, after { p ->
                 if (!p.hasThrowable()) synchronized(sessions) { sessions[p.thisObject] }?.draw()
             })
-            hooks += XposedBridge.hookMethod(finish, before { p ->
+            hooks += XposedBridge.hookMethod(finishMethod, before { p ->
                 synchronized(sessions) { sessions.remove(p.thisObject) }?.finish()
             })
             ctx.registerReceiver(object : BroadcastReceiver() {
                 override fun onReceive(context: Context?, intent: Intent?) {
                     val players = synchronized(sessions) { sessions.values.toList() }
-                    for (player in players) player.post {
+                    for (player in players) player.post { playback ->
                         when (intent?.action) {
-                            Intent.ACTION_SCREEN_OFF -> lock("screen_off")
-                            Intent.ACTION_USER_PRESENT -> unlock("user_present")
-                            Intent.ACTION_WALLPAPER_CHANGED, WallpaperStore.ACTION_CACHE_UPDATED -> reload()
+                            Intent.ACTION_SCREEN_OFF -> playback.lock("screen_off")
+                            Intent.ACTION_USER_PRESENT -> playback.unlock("user_present")
+                            Intent.ACTION_WALLPAPER_CHANGED, WallpaperStore.ACTION_CACHE_UPDATED -> playback.reload()
                         }
                     }
                 }
@@ -141,7 +146,13 @@ internal object HookOs4Wallpaper {
     }
 
     private fun guard(block: () -> Unit) {
-        try { block() } catch (t: Throwable) { XLog.i("OS4 wallpaper callback failed: $t") }
+        try { block() } catch (t: Throwable) {
+            XLog.i("OS4 wallpaper callback failed: $t")
+            if (callbackFailureReported.compareAndSet(false, true)) {
+                XLog.i(t.stackTraceToString())
+                HookStatus.report(diagnosticContext?.get(), HookStatus.PLAYBACK_HOOK, false, "OS4 回调异常：$t")
+            }
+        }
     }
 
     /** Mutable state and bitmap ownership are confined to the wallpaper's GL Handler. */
@@ -165,8 +176,10 @@ internal object HookOs4Wallpaper {
         private var source = ""
         private val tick = Runnable { requestFrame() }
 
-        fun post(block: Playback.() -> Unit) {
-            handler.post { if (!disposed) guard { block() } }
+        // Use an explicit argument: receiver lambdas can accidentally resolve an outer Method
+        // variable's invoke() instead of a same-named Playback member (bind/lock in 1.0.2).
+        fun post(block: (Playback) -> Unit) {
+            handler.post { if (!disposed) guard { block(this) } }
         }
 
         fun initialize() {
@@ -266,7 +279,7 @@ internal object HookOs4Wallpaper {
         fun draw() {
             if (disposed || preview || !timeline.active) return
             if (Looper.myLooper() !== handler.looper) {
-                post { fail("壁纸绘制线程与 APK 契约不匹配") }
+                post { it.fail("壁纸绘制线程与 APK 契约不匹配") }
                 return
             }
             if (configReady && !config.enabled) { cancel(); return }
