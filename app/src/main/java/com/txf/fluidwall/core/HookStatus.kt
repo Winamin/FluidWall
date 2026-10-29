@@ -20,9 +20,11 @@ object HookStatus {
 
     const val WALLPAPER_HOOK = "wallpaper_hook"
     const val WALLPAPER_EXPORT = "wallpaper_export"
+    const val PLAYBACK_HOOK = "playback_hook"
+    const val PLAYBACK_FRAME = "playback_frame"
 
     private const val PREFS = "fluidwall_diagnostics"
-    private val areas = setOf(WALLPAPER_HOOK, WALLPAPER_EXPORT)
+    private val areas = setOf(WALLPAPER_HOOK, WALLPAPER_EXPORT, PLAYBACK_HOOK, PLAYBACK_FRAME)
     private const val REMOTE_RETRIES = 6
 
     private val remote = Executors.newSingleThreadExecutor { runnable ->
@@ -44,6 +46,8 @@ object HookStatus {
     data class Snapshot(
         val wallpaperHook: Entry?,
         val wallpaperExport: Entry?,
+        val playbackHook: Entry? = null,
+        val playbackFrame: Entry? = null,
     )
 
     fun report(ctx: Context?, area: String, ok: Boolean, detail: String) {
@@ -96,6 +100,8 @@ object HookStatus {
         Snapshot(
             wallpaperHook = readEntry(prefs, WALLPAPER_HOOK),
             wallpaperExport = readEntry(prefs, WALLPAPER_EXPORT),
+            playbackHook = readEntry(prefs, PLAYBACK_HOOK),
+            playbackFrame = readEntry(prefs, PLAYBACK_FRAME),
         )
     } catch (_: Throwable) {
         Snapshot(null, null)

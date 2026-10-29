@@ -129,6 +129,8 @@ object LogStore {
             appendLine("应用: $version")
             appendLine("壁纸 Hook: ${status.wallpaperHook?.describe() ?: "未收到回报"}")
             appendLine("壁纸导出: ${status.wallpaperExport?.describe() ?: "未收到回报"}")
+            appendLine("动画 Hook: ${status.playbackHook?.describe() ?: "未收到回报"}")
+            appendLine("动画绘制: ${status.playbackFrame?.describe() ?: "未收到回报"}")
             appendLine("本地壁纸缓存: ${if (WallpaperStore.hasLocal(context)) "有" else "无"}")
             appendLine("----- 日志 -----")
         }
