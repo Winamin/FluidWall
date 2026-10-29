@@ -24,6 +24,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -41,17 +42,22 @@ import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
 import com.txf.fluidwall.core.ColorKMeans
 import com.txf.fluidwall.core.ConfigStore
 import com.txf.fluidwall.core.FluidConfig
 import com.txf.fluidwall.core.FluidTransitionView
 import com.txf.fluidwall.core.HookStatus
 import com.txf.fluidwall.core.LogStore
+import com.txf.fluidwall.core.ScopeRestarter
 import com.txf.fluidwall.core.WallpaperBridge
 import com.txf.fluidwall.core.WallpaperStore
 import com.txf.fluidwall.core.XLog
@@ -64,6 +70,7 @@ import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.CardDefaults
 import top.yukonga.miuix.kmp.basic.HorizontalDivider
 import top.yukonga.miuix.kmp.basic.Icon
+import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.NavigationBar
 import top.yukonga.miuix.kmp.basic.NavigationBarItem
 import top.yukonga.miuix.kmp.basic.Scaffold
@@ -96,7 +103,13 @@ fun FluidWallApp() {
 
     MiuixTheme(controller = controller) {
         Scaffold(
-            topBar = { TopAppBar(title = title, largeTitle = title) },
+            topBar = {
+                TopAppBar(
+                    title = title,
+                    largeTitle = title,
+                    actions = { RestartMenu() },
+                )
+            },
             bottomBar = {
                 NavigationBar {
                     Item(IconSettings, "设置", tab == 0) { tab = 0 }
@@ -113,6 +126,65 @@ fun FluidWallApp() {
         }
     }
 }
+
+@Composable
+private fun RestartMenu() {
+    var expanded by remember { mutableStateOf(false) }
+    val restart by ScopeRestarter.state.collectAsState()
+    val popupOffset = with(LocalDensity.current) { 56.dp.roundToPx() }
+    Box {
+        IconButton(
+            onClick = { expanded = true },
+            modifier = Modifier.size(48.dp),
+        ) {
+            Icon(
+                imageVector = IconMenu,
+                contentDescription = "更多操作",
+                modifier = Modifier.size(24.dp),
+                tint = MiuixTheme.colorScheme.onSurface,
+            )
+        }
+        if (expanded) Popup(
+            alignment = Alignment.TopEnd,
+            offset = IntOffset(0, popupOffset),
+            onDismissRequest = { expanded = false },
+            properties = PopupProperties(focusable = true),
+        ) {
+            Card(Modifier.width(280.dp)) {
+                Column(Modifier.padding(16.dp)) {
+                    Text("系统桌面 · 壁纸", style = MiuixTheme.textStyles.subtitle)
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        restart.message,
+                        style = MiuixTheme.textStyles.footnote1,
+                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    )
+                    Spacer(Modifier.height(16.dp))
+                    Button(
+                        onClick = { ScopeRestarter.restart() },
+                        enabled = !restart.running,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColorsPrimary(),
+                    ) {
+                        Text(if (restart.running) "正在处理…" else "重启作用域", style = MiuixTheme.textStyles.button)
+                    }
+                }
+            }
+        }
+    }
+}
+
+private val IconMenu: ImageVector
+    get() = materialIcon("menu") {
+        path(strokeWidth = 1.9f) {
+            moveTo(5f, 6f)
+            horizontalLineTo(19f)
+            moveTo(5f, 12f)
+            horizontalLineTo(19f)
+            moveTo(5f, 18f)
+            horizontalLineTo(19f)
+        }
+    }
 
 @Composable
 private fun androidx.compose.foundation.layout.RowScope.Item(
