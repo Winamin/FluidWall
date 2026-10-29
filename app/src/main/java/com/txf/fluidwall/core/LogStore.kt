@@ -3,7 +3,6 @@ package com.txf.fluidwall.core
 import android.app.Application
 import android.content.Context
 import android.net.Uri
-import android.os.Build
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -70,7 +69,7 @@ object LogStore {
                 ""
             }
         }
-        return buildReport(context) + "\n" + text.ifBlank { "(还没有日志)" }
+        return text.ifBlank { "(还没有日志)" }
     }
 
     private fun dispatch(line: String) {
@@ -109,31 +108,6 @@ object LogStore {
     private fun logFile(context: Context): File {
         val dir = File(context.filesDir, "logs").apply { mkdirs() }
         return File(dir, "fluidwall.log")
-    }
-
-    private fun buildReport(context: Context): String {
-        val status = HookStatus.read(context)
-        val version = try {
-            val info = context.packageManager.getPackageInfo(context.packageName, 0)
-            "${info.versionName ?: "?"} (${info.longVersionCode})"
-        } catch (_: Throwable) {
-            "?"
-        }
-        return buildString {
-            appendLine("FluidWall 运行报告")
-            appendLine("时间: ${stamp()}")
-            appendLine(
-                "设备: ${Build.MANUFACTURER} ${Build.MODEL} / " +
-                    "Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})",
-            )
-            appendLine("应用: $version")
-            appendLine("壁纸 Hook: ${status.wallpaperHook?.describe() ?: "未收到回报"}")
-            appendLine("壁纸导出: ${status.wallpaperExport?.describe() ?: "未收到回报"}")
-            appendLine("动画 Hook: ${status.playbackHook?.describe() ?: "未收到回报"}")
-            appendLine("动画绘制: ${status.playbackFrame?.describe() ?: "未收到回报"}")
-            appendLine("本地壁纸缓存: ${if (WallpaperStore.hasLocal(context)) "有" else "无"}")
-            appendLine("----- 日志 -----")
-        }
     }
 
     private fun stamp(): String = try {
