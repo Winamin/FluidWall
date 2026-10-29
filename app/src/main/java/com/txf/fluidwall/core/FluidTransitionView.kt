@@ -54,6 +54,7 @@ class FluidTransitionView @JvmOverloads constructor(
     var seed = 0f
     var tint = 0xFF6FA8FF.toInt()
     var ownBitmaps = true
+    var revealUnderlying = false
 
     val shaderReady: Boolean get() = runtime != null
 
@@ -145,6 +146,7 @@ class FluidTransitionView @JvmOverloads constructor(
         if (rs != null && lockShader != null && homeShader != null) {
             try {
                 rs.setFloatUniform("uProgress", progress)
+                rs.setFloatUniform("uRevealUnderlying", if (revealUnderlying) 1f else 0f)
                 rs.setFloatUniform("uScale", scale)
                 rs.setFloatUniform("uWarp", warp)
                 rs.setFloatUniform("uSoft", soft)
@@ -175,6 +177,15 @@ class FluidTransitionView @JvmOverloads constructor(
         dstRect.set(0f, 0f, w, h)
         val lock = lockBmp
         val home = homeBmp
+        if (revealUnderlying) {
+            // Preserve a transparent endpoint even if RuntimeShader becomes unavailable.
+            if (lock != null && !lock.isRecycled) {
+                bitmapPaint.alpha = ((1f - progress) * 255f).toInt().coerceIn(0, 255)
+                canvas.drawBitmap(lock, null, dstRect, bitmapPaint)
+                bitmapPaint.alpha = 255
+            }
+            return
+        }
         if (lock != null && !lock.isRecycled) {
             canvas.drawBitmap(lock, null, dstRect, bitmapPaint)
         }

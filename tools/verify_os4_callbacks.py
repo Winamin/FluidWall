@@ -33,7 +33,7 @@ def check_dispatch(classes, javap):
     inspected = 0
     for file in files:
         if file.stem.startswith('HookOs4Wallpaper$Playback'):
-            continue  # Playback.requestFrame intentionally reflects the host's refresh method.
+            continue  # Playback.syncSurface intentionally reflects the host's parent getter.
         name = file.relative_to(classes).with_suffix('').as_posix().replace('/', '.')
         result = subprocess.run([str(javap), '-p', '-c', '-s', '-classpath', str(classes), name],
                                 capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=30)
@@ -50,11 +50,13 @@ def check_dispatch(classes, javap):
             for target in re.findall(r'// Method ' + re.escape(PLAYBACK) + r'\.([^\s]+)', method):
                 counts[target] += 1
     required = {
-        'bind:(Z)V': 1,
+        'bind:(Landroid/service/wallpaper/WallpaperService$Engine;)V': 1,
         'lock:(Ljava/lang/String;)V': 2,  # keyguard Hook and screen-off receiver
         'unlock:(Ljava/lang/String;)V': 2,  # engine Hook and user-present receiver
         'reload:()V': 1,
         'surfaceLost:()V': 1,
+        'surfaceChanged:()V': 1,
+        'visibility:(Z)V': 1,
     }
     for target, minimum in required.items():
         if counts[target] < minimum:

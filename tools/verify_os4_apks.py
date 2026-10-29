@@ -32,10 +32,10 @@ PREFIX = "Lcom/miui/miwallpaper/"
 SERVICE = PREFIX + "wallpaperservice/UniversalWallpaper;"
 ENGINE = PREFIX + "wallpaperservice/impl/ImageEngineImpl;"
 DESKTOP = PREFIX + "wallpaperservice/impl/desktop/DesktopImageEngineImpl;"
-RENDERER = PREFIX + "opengl/ImageWallpaperRenderer;"
-ANIM = PREFIX + "opengl/AnimImageWallpaperRenderer;"
-DESKTOP_RENDERER = PREFIX + "container/openGL/DesktopAnimImageWallpaperRenderer;"
-HANDLER = "Landroid/os/Handler;"
+UNIVERSAL = SERVICE[:-1] + "$UniversalEngine;"
+ENGINE_SERVICE = PREFIX + "wallpaperservice/service/EngineService;"
+SURFACE_CONTROL = "Landroid/view/SurfaceControl;"
+SURFACE_HOLDER = "Landroid/view/SurfaceHolder;"
 DEX_NAME = re.compile(r"classes(?:\d+)?\.dex\Z")
 
 
@@ -259,107 +259,122 @@ def call_index(source: Method, target: str) -> int:
     return indexes[0]
 
 
-def object_getter(source: Method, expected_type: str) -> str:
-    require(len(source.instructions) == 2, f"Expected a direct object getter: {source.target}")
-    get = re.fullmatch(r"iget-object (v\d+), (v\d+), (\S+) // field@[0-9a-fA-F]+",
-                       source.instructions[0])
-    require(get is not None, f"Expected iget-object in {source.target}")
-    require(get.group(2) == f"v{source.registers - source.ins}",
-            f"Getter does not read its own instance: {source.target}")
-    require(get.group(3).endswith(":" + expected_type), f"Unexpected getter field type: {source.target}")
-    require(source.instructions[1] == "return-object " + get.group(1),
-            f"Getter does not return the loaded field: {source.target}")
-    return get.group(3)
+def synchronized_object_getter(source: Method, expected_type: str) -> tuple[str, str]:
+    """Return the object field and monitor field proved by a synchronized getter."""
+    instructions = source.instructions
+    require(len(instructions) == 8, f"Expected a synchronized object getter: {source.target}")
+    this_register = f"v{source.registers - source.ins}"
+    lock = re.fullmatch(rf"iget-object (v\d+), {this_register}, (\S+:Ljava/lang/Object;) // field@[0-9a-fA-F]+",
+                        instructions[0])
+    get = re.fullmatch(rf"iget-object (v\d+), {this_register}, (\S+:{re.escape(expected_type)}) // field@[0-9a-fA-F]+",
+                       instructions[2])
+    exception = re.fullmatch(r"move-exception (v\d+)", instructions[5])
+    require(lock is not None and get is not None and exception is not None,
+            f"Getter no longer reads its own monitor and object fields: {source.target}")
+    monitor = lock.group(1)
+    require(instructions[1] == f"monitor-enter {monitor}"
+            and instructions[3] == f"monitor-exit {monitor}"
+            and instructions[4] == f"return-object {get.group(1)}"
+            and instructions[6] == f"monitor-exit {monitor}"
+            and instructions[7] == f"throw {exception.group(1)}",
+            f"Changed synchronized getter control flow: {source.target}")
+    return get.group(2), lock.group(2)
 
 
 def check_wallpaper(classes: dict[str, DexClass]) -> None:
-    for child, parent in ((DESKTOP, ENGINE), (DESKTOP_RENDERER, ANIM), (ANIM, RENDERER),
-                          (SERVICE[:-1] + "$UniversalEngine;", "Landroid/service/wallpaper/WallpaperService$Engine;")):
+    for child, parent in ((DESKTOP, ENGINE),
+                          (UNIVERSAL, "Landroid/service/wallpaper/WallpaperService$Engine;")):
         require(child in classes and classes[child].parent == parent,
                 f"Changed inheritance: expected {child} extends {parent}")
 
-    constructor = method(classes, DESKTOP, "<init>", f"({SERVICE})V")
-    method(classes, DESKTOP, "F", f"({SERVICE[:-1]}$UniversalEngine;)V")
-    handler_getter = method(classes, ENGINE, "G", f"(){HANDLER}")
-    method(classes, ENGINE, "q", "()V")
-    renderer_getter = method(classes, DESKTOP, "P", f"(){RENDERER}")
+    method(classes, DESKTOP, "<init>", f"({SERVICE})V")
+    bind = method(classes, DESKTOP, "F", f"({UNIVERSAL})V")
+    finish = method(classes, DESKTOP, "L", "()V")
     for name, signature in (("hideKeyguardWallpaper", "(ZI)V"),
                             ("hideKeyguardWallpaper", "()V"),
                             ("showWallpaperUnlockAnim", "()V"),
                             ("showKeyguardWallpaper", "(ZI)V")):
         method(classes, DESKTOP, name, signature)
-    renderer_constructor = method(classes, DESKTOP_RENDERER, "<init>", f"({SERVICE}{HANDLER})V")
-    method(classes, DESKTOP_RENDERER, "finish", "()V")
-    method(classes, DESKTOP_RENDERER, "finish", "()V")
-    for name in ("onDrawFrame", "finish", "onSurfaceCreated"):
-        method(classes, RENDERER, name, "()V")
-    refresh = method(classes, ANIM, "refresh", "(Z)V")
-    print("PASS: exact hook signatures and class inheritance")
+    getter = method(classes, UNIVERSAL, "c", f"(){SURFACE_CONTROL}")
+    created = method(classes, UNIVERSAL, "onSurfaceCreated", f"({SURFACE_HOLDER})V")
+    changed = method(classes, UNIVERSAL, "onSurfaceChanged", f"({SURFACE_HOLDER}III)V")
+    destroyed = method(classes, UNIVERSAL, "onSurfaceDestroyed", f"({SURFACE_HOLDER})V")
+    visibility = method(classes, UNIVERSAL, "onVisibilityChanged", "(Z)V")
+    print("PASS: exact View/Surface hook signatures and wallpaper engine inheritance")
 
-    renderer_field = object_getter(renderer_getter, DESKTOP_RENDERER)
-    handler_field = object_getter(handler_getter, HANDLER)
-    renderer_calls = [(index, registers) for index, target, registers in calls(constructor)
-                      if target == renderer_constructor.target]
-    require(len(renderer_calls) == 1, "Expected one desktop renderer construction")
-    index, registers = renderer_calls[0]
-    require(len(registers) == 3, "Unexpected renderer constructor register layout")
-    instance, service, handler = registers
-    instructions = constructor.instructions
-    require(index >= 3, "Truncated renderer constructor instructions")
-    require(instructions[index - 3].startswith(f"new-instance {instance}, {DESKTOP_RENDERER} //"),
-            "Renderer constructor does not operate on the new desktop renderer")
-    require(re.fullmatch(rf"iget-object {service}, v\d+, \S+:{re.escape(SERVICE)} // field@[0-9a-fA-F]+",
-                         instructions[index - 2]) is not None,
-            "Renderer constructor no longer receives the engine's wallpaper service")
-    require(re.fullmatch(rf"iget-object {handler}, v\d+, {re.escape(handler_field)} // field@[0-9a-fA-F]+",
-                         instructions[index - 1]) is not None,
-            "Renderer constructor Handler differs from engine.G()")
-    this_register = f"v{constructor.registers - constructor.ins}"
-    require(re.fullmatch(rf"iput-object {instance}, {this_register}, {re.escape(renderer_field)} // field@[0-9a-fA-F]+",
-                         instructions[index + 1]) is not None,
-            "engine.P() does not return the desktop renderer created by the engine")
-    print(f"PASS: engine.P() returns the constructed desktop renderer ({renderer_field})")
-    print("PASS: engine.G() returns the same GL Handler passed to the renderer")
+    this_register = f"v{bind.registers - bind.ins}"
+    argument_register = f"v{bind.registers - bind.ins + 1}"
+    require(re.fullmatch(rf"iput-object {argument_register}, {this_register}, \S+:{re.escape(UNIVERSAL)} // field@[0-9a-fA-F]+",
+                         bind.instructions[0]) is not None,
+            "DesktopImageEngineImpl.F() no longer stores its UniversalEngine argument")
+    call_index(finish, f"{ENGINE}.L:()V")
+    print("PASS: F() binds the UniversalEngine and declared L() delegates to engine teardown")
 
-    require(("onDrawFrame", "()V") not in classes[DESKTOP_RENDERER].methods,
-            "Desktop renderer now overrides onDrawFrame; review dispatch")
-    inherited_draw = method(classes, ANIM, "onDrawFrame", "()V")
-    call_index(inherited_draw, f"{RENDERER}.onDrawFrame:()V")
-    require(len(inherited_draw.instructions) == 2 and inherited_draw.instructions[-1] == "return-void",
-            "Anim renderer onDrawFrame now does more than delegate; review after-hook placement")
-    render = method(classes, ENGINE, "M", "(Z)V")
-    prepare = call_index(render, f"{ENGINE}.V:()V")
-    draw = call_index(render, f"{RENDERER}.onDrawFrame:()V")
-    swaps = []
-    for index, target, _ in calls(render):
-        match = re.fullmatch(r"(L[^;]+;)\.([^:]+):(\(.*)", target)
-        if match and match.group(1) in classes:
-            candidate = classes[match.group(1)].methods.get((match.group(2), match.group(3)))
-            if candidate and any(called == "Landroid/opengl/EGL14;.eglSwapBuffers:(Landroid/opengl/EGLDisplay;Landroid/opengl/EGLSurface;)Z"
-                                 for _, called, _ in calls(candidate)):
-                swaps.append(index)
-    require(len(swaps) == 1 and prepare < draw < swaps[0],
-            "Cannot prove prepare -> renderer.onDrawFrame -> EGL swap instruction order")
-    require(not any(re.match(r"(?:if-|goto|return|throw|.*switch)", instruction)
-                    for instruction in render.instructions[draw + 1:swaps[0]]),
-            "Control flow changed between renderer.onDrawFrame and EGL swap")
-    print("PASS: inherited onDrawFrame runs after EGL preparation and before eglSwapBuffers")
+    surface_field, monitor_field = synchronized_object_getter(getter, SURFACE_CONTROL)
+    print(f"PASS: UniversalEngine.c() returns its synchronized SurfaceControl cache ({surface_field})")
 
-    callback = f"{ANIM[:-1]}$CallBack;.onRefresh:(Z)V"
-    call_index(refresh, callback)
-    on_refresh = method(classes, DESKTOP[:-1] + "$1;", "onRefresh", "(Z)V")
-    call_index(on_refresh, f"{ENGINE}.U:(Z)V")
-    request = method(classes, ENGINE, "U", "(Z)V")
-    thread_utils = PREFIX + "utils/ThreadUtils;"
-    call_index(request, f"{thread_utils}.b:({HANDLER}Ljava/lang/Runnable;)V")
-    thread_class = classes.get(thread_utils)
-    dispatch = thread_class.methods.get(("b", f"({HANDLER}Ljava/lang/Runnable;)V")) if thread_class else None
-    require(dispatch is not None, "Missing ThreadUtils.b Handler dispatcher")
-    for target in ("Landroid/os/Looper;.myLooper:()Landroid/os/Looper;",
-                   "Ljava/lang/Runnable;.run:()V",
-                   "Landroid/os/Handler;.post:(Ljava/lang/Runnable;)Z"):
-        call_index(dispatch, target)
-    print("PASS: refresh callback reaches GL dispatcher (same-thread run is synchronous)")
+    instructions = created.instructions
+    this_register = f"v{created.registers - created.ins}"
+    names = [(index, match.group(1)) for index, instruction in enumerate(instructions)
+             if (match := re.fullmatch(r'const-string(?:/jumbo)? (v\d+), "mSurfaceControl" // string@[0-9a-fA-F]+',
+                                       instruction))]
+    require(len(names) == 1, "Expected one mSurfaceControl reflection in onSurfaceCreated")
+    index, name_register = names[0]
+    require(index >= 2 and index + 5 < len(instructions), "Truncated SurfaceControl cache assignment")
+    reflection = f"{PREFIX}utils/ReflectUtil;.c:({UNIVERSAL}Ljava/lang/String;)Ljava/lang/Object;"
+    require((index + 1, reflection, [this_register, name_register]) in calls(created),
+            "mSurfaceControl is no longer read by ReflectUtil.c from this UniversalEngine")
+    result = re.fullmatch(r"move-result-object (v\d+)", instructions[index + 2])
+    require(result is not None, "Missing reflected SurfaceControl result")
+    result_register = result.group(1)
+    require(re.fullmatch(rf"check-cast {result_register}, {re.escape(SURFACE_CONTROL)} // type@[0-9a-fA-F]+",
+                         instructions[index + 3]) is not None
+            and re.fullmatch(rf"iput-object {result_register}, {this_register}, {re.escape(surface_field)} // field@[0-9a-fA-F]+",
+                             instructions[index + 4]) is not None,
+            "Reflected mSurfaceControl is not cached in the field returned by c()")
+    lock = re.fullmatch(rf"iget-object (v\d+), {this_register}, {re.escape(monitor_field)} // field@[0-9a-fA-F]+",
+                        instructions[index - 2])
+    require(lock is not None and instructions[index - 1] == f"monitor-enter {lock.group(1)}"
+            and instructions[index + 5] == f"monitor-exit {lock.group(1)}",
+            "SurfaceControl cache write no longer uses the getter's monitor")
+    initialize = call_index(created, f"{ENGINE_SERVICE}.x:({SURFACE_HOLDER})V")
+    require(initialize < index, "SurfaceControl cache timing changed relative to engine surface creation")
+    print("PASS: onSurfaceCreated caches reflected mSurfaceControl after engine initialization")
+
+    instructions = destroyed.instructions
+    this_register = f"v{destroyed.registers - destroyed.ins}"
+    clears = [(index, match.group(1)) for index, instruction in enumerate(instructions)
+              if (match := re.fullmatch(rf"iput-object (v\d+), {this_register}, {re.escape(surface_field)} // field@[0-9a-fA-F]+",
+                                        instruction))]
+    require(len(clears) == 1, "Expected one SurfaceControl cache write in onSurfaceDestroyed")
+    index, null_register = clears[0]
+    # A conservative direct-register check: its last operation must define integer zero,
+    # which is the DEX null value for iput-object; invocations cannot mutate caller registers.
+    operations = [instruction for instruction in instructions[:index]
+                  if re.match(rf"\S+ {null_register}(?:,|$)", instruction)]
+    require(bool(operations) and re.fullmatch(rf"const(?:/4|/16)? {null_register}, #int 0 // #0",
+                                            operations[-1]) is not None,
+            "onSurfaceDestroyed does not clear the SurfaceControl cache to null")
+    require(index >= 2 and index + 1 < len(instructions), "Truncated SurfaceControl cache clear")
+    lock = re.fullmatch(rf"iget-object (v\d+), {this_register}, {re.escape(monitor_field)} // field@[0-9a-fA-F]+",
+                        instructions[index - 2])
+    require(lock is not None and instructions[index - 1] == f"monitor-enter {lock.group(1)}"
+            and instructions[index + 1] == f"monitor-exit {lock.group(1)}",
+            "SurfaceControl cache clear no longer uses the getter's monitor")
+    # q() is lifecycle evidence, not a hook dependency of the View-based implementation.
+    notify = call_index(destroyed, f"{ENGINE_SERVICE}.q:()V")
+    require(index < notify, "Engine surface-loss notification precedes the SurfaceControl cache clear")
+    print("PASS: onSurfaceDestroyed clears the same cache before EngineService.q() notification")
+
+    for source, target, argument_offsets in (
+            (changed, f"{ENGINE_SERVICE}.A:({SURFACE_HOLDER}II)V", (1, 3, 4)),
+            (visibility, f"{ENGINE_SERVICE}.g:(Z)V", (1,))):
+        index = call_index(source, target)
+        registers = next(registers for call, _, registers in calls(source) if call == index)
+        incoming = source.registers - source.ins
+        require(registers[1:] == [f"v{incoming + offset}" for offset in argument_offsets],
+                f"Lifecycle callback no longer forwards its original arguments: {source.target}")
+    print("PASS: surface dimensions and visibility are forwarded to the engine unchanged")
 
 
 def check_launcher(apk: Apk) -> None:

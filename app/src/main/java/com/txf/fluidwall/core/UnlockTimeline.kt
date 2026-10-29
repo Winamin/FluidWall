@@ -1,6 +1,6 @@
 package com.txf.fluidwall.core
 
-/** One unlock per lock cycle, with bounded waiting for the first drawable frame. GL-thread only. */
+/** One unlock per lock cycle, with bounded waiting for the first drawable frame. Single-threaded. */
 internal class UnlockTimeline(private val readyWindowMs: Long = 1500L) {
     private var armed = false
     private var requestedAt: Long? = null

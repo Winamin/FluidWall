@@ -15,6 +15,7 @@ uniform float uBleed;
 uniform float uRadial;
 uniform float uSeed;
 uniform float3 uTint;
+uniform float uRevealUnderlying;
 
 float hash21(float2 p) {
     float2 q = p - floor(p * 0.015625) * 64.0;
@@ -99,6 +100,17 @@ half4 main(float2 coord) {
 
     half4 lockC = uLock.eval(coord);
     half4 homeC = uHome.eval(warped);
+
+    // A wallpaper child layer reveals the live system image underneath. Premultiplied alpha
+    // keeps the moving rim correct without copying or sampling the host's rendering buffers.
+    if (uRevealUnderlying > 0.5) {
+        half4 source = uLock.eval(warped);
+        float g = hash21(uv * 640.0 + float2(uSeed * 13.0, 7.0)) - 0.5;
+        half3 rgb = source.rgb + half3(uTint * (rim * uBleed));
+        rgb += half3(g * uGrain * (1.0 - smoothstep(0.72, 0.92, t)));
+        half alpha = half(1.0 - m);
+        return half4(clamp(rgb, half3(0.0), half3(1.0)) * alpha, alpha);
+    }
 
     half4 c = mix(lockC, homeC, half(m));
     c.rgb += half3(uTint * float(rim * uBleed));
