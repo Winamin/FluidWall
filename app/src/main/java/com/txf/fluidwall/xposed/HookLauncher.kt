@@ -1,6 +1,7 @@
 package com.txf.fluidwall.xposed
 
 import android.app.Activity
+import android.content.pm.ApplicationInfo
 import com.txf.fluidwall.core.LauncherLayer
 import com.txf.fluidwall.core.XLog
 import de.robv.android.xposed.XC_MethodHook
@@ -22,6 +23,16 @@ object HookLauncher {
     fun install(cl: ClassLoader) {
         if (installed) return
         installed = true
+        HookUtil.appInit { ctx ->
+            if (ctx.applicationInfo.flags and ApplicationInfo.FLAG_HAS_CODE == 0) {
+                XLog.i("native launcher: transition is handled by the wallpaper process")
+                return@appInit
+            }
+            installJavaLauncher(cl)
+        }
+    }
+
+    private fun installJavaLauncher(cl: ClassLoader) {
         val cls = HookUtil.findClass(
             cl,
             "com.miui.home.launcher.BaseLauncher",

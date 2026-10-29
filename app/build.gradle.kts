@@ -11,8 +11,8 @@ android {
         applicationId = "com.txf.fluidwall"
         minSdk = 33
         targetSdk = 36
-        versionCode = 20261028
-        versionName = "1.0.1"
+        versionCode = 20261029
+        versionName = "1.0.2"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         multiDexKeepProguard = file("multidex-keep.pro")
     }
@@ -62,6 +62,7 @@ dependencies {
     implementation("androidx.activity:activity-compose:1.10.1")
     implementation("top.yukonga.miuix.kmp:miuix-ui-android:0.9.3")
     implementation("top.yukonga.miuix.kmp:miuix-preference-android:0.9.3")
+    testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test:runner:1.6.2")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
 }

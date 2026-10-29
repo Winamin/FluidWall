@@ -31,6 +31,7 @@ object HookWallpaper {
         if (installed) return
         installed = true
         HookUtil.appInit { ctx ->
+            HookOs4Wallpaper.install(ctx, cl)
             drawableHooked = hookDrawable(cl)
             watchChanges(ctx)
             exportAsync(ctx)

@@ -7,7 +7,7 @@ import io.github.libxposed.api.XposedModuleInterface
 /**
  * Only two processes are hooked:
  *  - com.miui.home        draws the transition inside the wallpaper layer
- *  - com.miui.miwallpaper reads wallpaper pixels and can export them for the launcher
+ *  - com.miui.miwallpaper exports pixels and renders the transition for native OS4 desktops
  * SystemUI is deliberately out of scope; all overlay playback there was removed.
  */
 class FluidModule : XposedModule() {
